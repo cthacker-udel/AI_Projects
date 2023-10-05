@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import List, Set
+from helpers import check_is_value_valid, check_is_value_valid_V2
 
 
 def generate_id_from_key(key: int) -> str:
@@ -34,12 +35,22 @@ class Agenda:
         self.rules: List[Rule] = []
 
     def check_arc_consistency(self: Agenda) -> bool:
+        curr_rules = set()
         while len(self.rules) > 0:
             curr_rule = self.rules.pop(0)
             try:
-                if not curr_rule.is_consistent():
+                if not curr_rule.test_consistency():
                     self.rules.append(
                         Rule(curr_rule.destination, curr_rule.source))
+                    for each_connected in curr_rule.source.connected:
+                        potential_rule = Rule(curr_rule.source, each_connected)
+                        if each_connected.key != curr_rule.destination.key and str(potential_rule) not in curr_rules:
+                            self.rules.append(
+                                potential_rule)
+                            curr_rules.add(str(potential_rule))
+                elif str(curr_rule) in curr_rules:
+                    curr_rules.remove(str(curr_rule))
+
             except ValueError as err:
                 print(err)
                 return False
@@ -51,32 +62,36 @@ class Rule:
         self.source: BoardVariable = _from
         self.destination: BoardVariable = _to
 
+    def test_consistency(self: Rule) -> bool:
+        if len(self.destination.domain) > 0:
+            tmp_domain = set(self.source.domain)
+            for each_value in self.source.domain:
+                is_valid_value = True
+                for each_potential_valid_assignment in self.destination.domain:
+                    if check_is_value_valid_V2(self.source.key, each_value, self.destination.key, each_potential_valid_assignment):
+                        is_valid_value = True
+                        break
+                    else:
+                        is_valid_value = False
+                if not is_valid_value:
+                    tmp_domain.remove(each_value)
+
+            if tmp_domain != self.source.domain:
+                self.source.domain = tmp_domain
+                return False
+
+            return True
+        return False
+
     def is_consistent(self: Rule) -> bool:
         if len(self.source.domain) > 1:
+            for each_value in self.destination.domain:
+                if not check_is_value_valid(self.destination.key, each_value, self.source.key, self.source.domain):
+                    self.destination.domain.remove(each_value)
+                    return False
             return True
 
-        diag_right = self.destination.key + list(self.source.domain)[0] - 1
-        diag_left = list(self.source.domain)[0] - (self.destination.key - 1)
-        col = list(self.source.domain)[0]
-
-        tmp_domain = set(x for x in self.destination.domain)
-        diff = set([diag_right, diag_left, col])
-
-        if len(tmp_domain.difference(diff)) == 0:
-            raise ValueError("Domain will be empty")
-
-        is_consistent_b = True
-
-        if diag_right in self.destination.domain:
-            self.destination.domain.remove(diag_right)
-            is_consistent_b = False
-        if diag_left in self.destination.domain:
-            self.destination.domain.remove(diag_left)
-            is_consistent_b = False
-        if col in self.destination.domain:
-            self.destination.domain.remove(col)
-            is_consistent_b = False
-        return is_consistent_b
+        return True
 
     def __str__(self: Rule) -> str:
         return f'{generate_id_from_key(self.source.key)} --> {generate_id_from_key(self.destination.key)}'
@@ -103,21 +118,43 @@ class StateGraph:
         # potential # of domain values that will be removed
         return len(cols) + len(diag_left) + len(diag_right)
 
+    def get_all_domains(self: StateGraph) -> dict[int, List[int]]:
+        old_domains = {}
+        for each_variable in self.variables:
+            old_domains[each_variable.key] = list(
+                x for x in each_variable.domain)
+        return old_domains
+
     def run_algorithm(self: StateGraph) -> None:
         unsatisfied_variables = list(
             self.variables[i] for i in range(self.rows))
         ac3_agenda: Agenda = Agenda()
+        bad_choice = -1
         while len(unsatisfied_variables) > 0:
             first_variable = unsatisfied_variables.pop(0)
-            choices = sorted(list(x for x in first_variable.domain),
-                             key=lambda x: self.potential_impact(first_variable.key, x))
+            choices = list(x for x in first_variable.domain)
+
+            if bad_choice != -1:
+                choices = choices[1:] + [choices[0]]
+                bad_choice = -1
+
             optimal_choice = choices.pop(0)
+
+            old_domains = self.get_all_domains()
             first_variable.domain = set([optimal_choice])
             for each_connected in first_variable.connected:
                 ac3_agenda.rules.append(Rule(first_variable, each_connected))
+                ac3_agenda.rules.append(Rule(each_connected, first_variable))
+
             is_consistent = ac3_agenda.check_arc_consistency()
             if not is_consistent:
-                first_variable.domain = set(choices) - first_variable.domain
+                bad_choice = optimal_choice
+                for each_key in old_domains.items():
+                    self.variables[each_key[0] -
+                                   1].domain = set(each_key[1])
+                unsatisfied_variables.insert(0, first_variable)
+        for each_var in self.variables:
+            print(each_var.domain)
 
 
 if __name__ == '__main__':
