@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import List, Set, Optional
 from helpers import check_is_value_valid_V2
 import time
+import plotly.express as px
+import pandas as pd
 
 
 def filter_out_connected(key: int, node: BoardVariable) -> List[BoardVariable]:
@@ -226,5 +228,12 @@ class StateGraph:
 
 
 if __name__ == '__main__':
-    board = StateGraph(18, 18)
-    board.run_algorithm()
+    values = list(x for x in range(3, 20))
+    times = []
+    for each_board_measurement in values:
+        board = StateGraph(each_board_measurement, each_board_measurement)
+        runtime = board.run_algorithm()
+        times.append(runtime)
+    df = pd.DataFrame({'NxN': values, 'Runtime': times})
+    fig = px.line(df, x='NxN', y='Runtime', title="Runtime of NQueens")
+    fig.show()
