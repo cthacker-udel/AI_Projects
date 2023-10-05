@@ -1,75 +1,125 @@
 from __future__ import annotations
-from typing import Dict, List
+from typing import List, Set
 
-class BoardCoordinate:
-    def __init__(self: BoardCoordinate, x: int, y: int) -> None:
-        self.x = x
-        self.y = y
-        self.occupied: bool = False
-    
-    def occupy(self: BoardCoordinate) -> None:
-        self.occupied = not self.occupied
 
-class BoardDomain:
-    def __init__(self: BoardDomain, row: int, cols: int) -> None:
-        self.domain_key = row
-        self.domain: Dict[int, BoardCoordinate] = {}
-        for each_col in range(1, cols + 1):
-            self.domain[each_col] = BoardCoordinate(row, each_col)
-        
+def generate_id_from_key(key: int) -> str:
+    """
+        # Excel formula https://stackoverflow.com/a/182924
+    """
+    column_name = ''
+    while key > 0:
+        mod = (key - 1) % 36
+        column_name = chr(ord('A') + mod) + column_name
+        key = (key - mod) // 26
+    return column_name
 
-class Board:
-    def __init__(self: Board, m: int = 5, n: int = 5) -> None:
+
+class BoardVariable:
+    def __init__(self: BoardVariable, row: int, cols: int) -> None:
+        self.key = row
+        self.cols = cols
+        self.domain: Set[int] = set(x for x in range(1, cols + 1))
+        self.connected: List[BoardVariable] = []
+
+    def clone(self: BoardVariable) -> BoardVariable:
+        cloned = BoardVariable(self.key, self.cols)
+        cloned.domain = set(x for x in self.domain)
+        cloned.connected = list(x.clone() for x in self.connected)
+
+        return cloned
+
+
+class Agenda:
+    def __init__(self: Agenda):
+        self.rules: List[Rule] = []
+
+    def check_arc_consistency(self: Agenda) -> bool:
+        while len(self.rules) > 0:
+            curr_rule = self.rules.pop(0)
+            try:
+                if not curr_rule.is_consistent():
+                    self.rules.append(
+                        Rule(curr_rule.destination, curr_rule.source))
+            except ValueError as err:
+                print(err)
+                return False
+        return True
+
+
+class Rule:
+    def __init__(self: Rule, _from: BoardVariable, _to: BoardVariable):
+        self.source: BoardVariable = _from
+        self.destination: BoardVariable = _to
+
+    def is_consistent(self: Rule) -> bool:
+        if len(self.source.domain) > 1:
+            return True
+
+        diag_right = self.destination.key + list(self.source.domain)[0] - 1
+        diag_left = list(self.source.domain)[0] - (self.destination.key - 1)
+        col = list(self.source.domain)[0]
+
+        tmp_domain = set(x for x in self.destination.domain)
+        diff = set([diag_right, diag_left, col])
+
+        if len(tmp_domain.difference(diff)) == 0:
+            raise ValueError("Domain will be empty")
+
+        is_consistent_b = True
+
+        if diag_right in self.destination.domain:
+            self.destination.domain.remove(diag_right)
+            is_consistent_b = False
+        if diag_left in self.destination.domain:
+            self.destination.domain.remove(diag_left)
+            is_consistent_b = False
+        if col in self.destination.domain:
+            self.destination.domain.remove(col)
+            is_consistent_b = False
+        return is_consistent_b
+
+    def __str__(self: Rule) -> str:
+        return f'{generate_id_from_key(self.source.key)} --> {generate_id_from_key(self.destination.key)}'
+
+
+class StateGraph:
+    def __init__(self: StateGraph, m: int = 5, n: int = 5) -> None:
         self.rows = m
         self.columns = n
-        self.domains: List[BoardDomain] = []
+        self.moves: List[List[int]]
+        self.variables: List[BoardVariable] = []
         for each_row in range(1, self.rows + 1):
-            self.domains.append(BoardDomain(each_row, self.columns))
-        
+            self.variables.append(BoardVariable(each_row, self.columns))
+        for ind, each_variable in enumerate(self.variables):
+            each_variable.connected = self.variables[:ind] + \
+                self.variables[ind + 1:]
 
-    def find_domain(self: Board, row: int) -> BoardDomain:
-        for each_domain in self.domains:
-            if each_domain.domain_key == row:
-                return each_domain
-        raise Exception("Cannot find domain")
-    
+    def potential_impact(self: StateGraph, row: int, col: int) -> int:
+        cols = list(x for x in range(1, col)) + \
+            list(x for x in range(col + 1, self.columns + 1))
+        diag_left = list(x for x in range(col + 1, self.columns + 1))
+        diag_right = list(x for x in range(0, col))
 
-    def place_queen(self: Board, queen_x: int, queen_y: int) -> None:
-        found_domain = self.find_domain(queen_x)
-        if queen_y in found_domain.domain and not found_domain.domain[queen_y].occupied:
-            # can place there
-            found_domain.domain[queen_y].occupy()
+        # potential # of domain values that will be removed
+        return len(cols) + len(diag_left) + len(diag_right)
 
-
-    def update_diagonals(self: Board, queen_x: int, queen_y: int, down: bool = False, right: bool = False) -> None:
-        col = queen_y - (-1 if right else 1)
-        for i in range(queen_x - (-1 if down else 1), self.rows if down else 0):
-            found_domain = self.find_domain(i)
-            if found_domain.domain[col].occupied:
-                return False
-
-            if (col == self.columns and right) or (col == 0 and not right):
-                return True
-            
-            found_domain.domain[col].occupy()
-        return True
-    
-    def update_horizontal(self: Board, queen_x: int) -> None:
-        found_domain = self.find_domain(queen_x)
-        for each_x in found_domain.domain:
-            if each_x != queen_x:
-                found_domain.domain[each_x].occupy()
-    
-    def update_vertical(self: Board, queen_y: int) -> None:
-        for i in range(0, self.rows):
-            found_domain = self.find_domain(i)
-            if found_domain.domain[queen_y].occupied:
-                return False
-            
-            found_domain.domain[queen_y].occupy()
-        return True
-            
+    def run_algorithm(self: StateGraph) -> None:
+        unsatisfied_variables = list(
+            self.variables[i] for i in range(self.rows))
+        ac3_agenda: Agenda = Agenda()
+        while len(unsatisfied_variables) > 0:
+            first_variable = unsatisfied_variables.pop(0)
+            choices = sorted(list(x for x in first_variable.domain),
+                             key=lambda x: self.potential_impact(first_variable.key, x))
+            optimal_choice = choices.pop(0)
+            first_variable.domain = set([optimal_choice])
+            for each_connected in first_variable.connected:
+                ac3_agenda.rules.append(Rule(first_variable, each_connected))
+            is_consistent = ac3_agenda.check_arc_consistency()
+            if not is_consistent:
+                first_variable.domain = set(choices) - first_variable.domain
 
 
 if __name__ == '__main__':
-    board = Board()
+    board = StateGraph()
+    board.run_algorithm()
