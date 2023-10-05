@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import List, Set
-from helpers import check_is_value_valid, check_is_value_valid_V2
+from typing import List, Set, Optional
+from helpers import check_is_value_valid_V2
 
 
 def generate_id_from_key(key: int) -> str:
@@ -15,21 +15,6 @@ def generate_id_from_key(key: int) -> str:
     return column_name
 
 
-class BoardVariable:
-    def __init__(self: BoardVariable, row: int, cols: int) -> None:
-        self.key = row
-        self.cols = cols
-        self.domain: Set[int] = set(x for x in range(1, cols + 1))
-        self.connected: List[BoardVariable] = []
-
-    def clone(self: BoardVariable) -> BoardVariable:
-        cloned = BoardVariable(self.key, self.cols)
-        cloned.domain = set(x for x in self.domain)
-        cloned.connected = list(x.clone() for x in self.connected)
-
-        return cloned
-
-
 class Agenda:
     def __init__(self: Agenda):
         self.rules: List[Rule] = []
@@ -38,7 +23,6 @@ class Agenda:
         curr_rules = set()
         while len(self.rules) > 0:
             curr_rule = self.rules.pop(0)
-            print(curr_rule.destination.domain, curr_rule.source.domain)
             try:
                 if not curr_rule.test_consistency() and len(curr_rule.source.domain) > 0 and len(curr_rule.destination.domain) > 0:
                     self.rules.append(
@@ -84,18 +68,62 @@ class Rule:
             return True
         return False
 
-    def is_consistent(self: Rule) -> bool:
-        if len(self.source.domain) > 1:
-            for each_value in self.destination.domain:
-                if not check_is_value_valid(self.destination.key, each_value, self.source.key, self.source.domain):
-                    self.destination.domain.remove(each_value)
-                    return False
-            return True
-
-        return True
-
     def __str__(self: Rule) -> str:
         return f'{generate_id_from_key(self.source.key)} --> {generate_id_from_key(self.destination.key)}'
+
+
+class BoardVariable:
+    def __init__(self: BoardVariable, row: int, cols: int, domain: Optional[Set[int]] = None, connected: Optional[List[BoardVariable]] = None) -> None:
+        self.key = row
+        self.cols = cols
+        self.domain: Set[int] = set(x for x in range(
+            1, cols + 1)) if not domain else set(domain)
+        self.connected: List[BoardVariable] = [
+        ] if not connected else connected
+
+    def clone(self: BoardVariable) -> BoardVariable:
+        cloned = BoardVariable(self.key, self.cols)
+        cloned.domain = set(x for x in self.domain)
+        cloned.connected = self.connected
+        return cloned
+
+    def __str__(self: BoardVariable) -> str:
+        return f'|{self.key}|-->{"".join(list(str(x) for x in self.domain))}'
+
+
+class StateNode:
+    def __init__(self: StateNode, variable: BoardVariable, variable_count: int) -> None:
+        # TODO: Represent choices of queens as nodes in the state, so the first layer is 1,1 | 1,2 | 1,3 | 1,4 | 1,5, then from those roots, branch down
+        self.parent: Optional[StateNode] = None
+        self.x_move = variable.key
+        self.explored = False
+        self.variable = variable.clone()
+        self.variable.connected = [BoardVariable(
+            x.key, x.cols, set(x.domain)) for x in self.variable.connected]
+        self.y_move = -1
+        self.variable_count = variable_count
+
+    def move(self: StateNode, y_move: int) -> StateNode:
+        self.y_move = y_move
+        self.variable.domain = set([y_move])
+        return StateNode(self.variable.clone(), self.variable_count)
+
+    def find_next_move(self: StateNode) -> BoardVariable:
+        for each_variable_id in range(self.variable.key + 1, self.variable_count + 1):
+            for each_variable in self.variable.connected:
+                if each_variable.key == each_variable_id:
+                    each_variable.connected = [self.variable.clone(
+                    )] + [x for x in self.variable.connected if x.key != each_variable_id]
+                    return each_variable
+        return self.variable
+
+    def __str__(self: StateNode) -> str:
+        total_str = ''
+        for each_variable_id in range(1, self.variable_count + 1):
+            for each_variable in [self.variable] + self.variable.connected:
+                if each_variable.key == each_variable_id:
+                    total_str += str(each_variable)
+        return total_str
 
 
 class StateGraph:
@@ -110,54 +138,52 @@ class StateGraph:
             each_variable.connected = self.variables[:ind] + \
                 self.variables[ind + 1:]
 
-    def potential_impact(self: StateGraph, row: int, col: int) -> int:
-        cols = list(x for x in range(1, col)) + \
-            list(x for x in range(col + 1, self.columns + 1))
-        diag_left = list(x for x in range(col + 1, self.columns + 1))
-        diag_right = list(x for x in range(0, col))
+    def is_goal(self: StateGraph, node: StateNode) -> bool:
+        total_variables = [node.variable] + node.variable.connected
+        return len(list(filter(lambda x: len(x.domain) == 1, total_variables))) == len(total_variables)
 
-        # potential # of domain values that will be removed
-        return len(cols) + len(diag_left) + len(diag_right)
-
-    def get_all_domains(self: StateGraph) -> dict[int, List[int]]:
-        old_domains = {}
-        for each_variable in self.variables:
-            old_domains[each_variable.key] = list(
-                x for x in each_variable.domain)
-        return old_domains
+    def print_moves(self: StateGraph, node: StateNode) -> None:
+        total_variables = [node.variable] + node.variable.connected
+        print_str = ''
+        for each_var in total_variables:
+            print_str += f'{generate_id_from_key(each_var.key)} = {each_var.domain}\n'
+        print(print_str)
 
     def run_algorithm(self: StateGraph) -> None:
-        unsatisfied_variables = list(
-            self.variables[i] for i in range(self.rows))
-        ac3_agenda: Agenda = Agenda()
-        bad_choice = -1
-        while len(unsatisfied_variables) > 0:
-            first_variable = unsatisfied_variables.pop(0)
-            choices = list(x for x in first_variable.domain)
+        # stack, LIFO
+        move_stack: List[StateNode] = []
+        explored_states: set[str] = set()
 
-            if bad_choice != -1:
-                choices = choices[1:] + [choices[0]]
-                bad_choice = -1
+        for each_root_domain_value in self.variables[0].domain:
+            move_stack.append(
+                StateNode(self.variables[0], self.rows).move(each_root_domain_value))
 
-            optimal_choice = choices.pop(0)
+        while len(move_stack) > 0:
+            current_move = move_stack.pop()
 
-            old_domains = self.get_all_domains()
-            first_variable.domain = set([optimal_choice])
-            for each_connected in first_variable.connected:
-                ac3_agenda.rules.append(Rule(first_variable, each_connected))
-                ac3_agenda.rules.append(Rule(each_connected, first_variable))
+            if self.is_goal(current_move):
+                self.print_moves(current_move)
+                break
 
-            is_consistent = ac3_agenda.check_arc_consistency()
-            if not is_consistent or not all((len(x.domain) > 0 for x in self.variables)):
-                bad_choice = optimal_choice
-                for each_key in old_domains.items():
-                    self.variables[each_key[0] -
-                                   1].domain = set(each_key[1])
-                unsatisfied_variables.insert(0, first_variable)
-        for each_var in self.variables:
-            print(each_var.domain)
+            if not current_move.explored and str(current_move) not in explored_states:
+                current_move.explored = True
+                explored_states.add(str(current_move))
+                ac3_agenda = Agenda()
+                for each_connected in current_move.variable.connected:
+                    ac3_agenda.rules.append(
+                        Rule(current_move.variable, each_connected))
+                    ac3_agenda.rules.append(
+                        Rule(each_connected, current_move.variable))
+                is_consistent = ac3_agenda.check_arc_consistency()
+                if is_consistent:
+                    next_move = StateNode(
+                        current_move.find_next_move(), self.rows)
+                    next_move.parent = current_move
+                    for each_value in next_move.variable.domain:
+                        move_stack.append(next_move.move(each_value))
+        print('exited')
 
 
 if __name__ == '__main__':
-    board = StateGraph(6, 6)
+    board = StateGraph(16, 12)
     board.run_algorithm()
