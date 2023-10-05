@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, Set, Optional
 from helpers import check_is_value_valid_V2
+import time
 
 
 def filter_out_connected(key: int, node: BoardVariable) -> List[BoardVariable]:
@@ -184,8 +185,9 @@ class StateGraph:
             print_str += f'{generate_id_from_key(i)} = {domain_mapping[i]}\n'
         print(print_str)
 
-    def run_algorithm(self: StateGraph) -> None:
+    def run_algorithm(self: StateGraph) -> float:
         # stack, LIFO
+        st = time.time()
         move_stack: List[StateNode] = []
         explored_states: set[str] = set()
 
@@ -218,9 +220,11 @@ class StateGraph:
                 if self.is_goal(current_move) and is_consistent:
                     self.print_moves(current_move)
                     break
-        print('exited')
+        et = time.time()
+        print(f'{round(et - st, 2)} seconds')
+        return round(et - st, 2)
 
 
 if __name__ == '__main__':
-    board = StateGraph(30, 30)
+    board = StateGraph(18, 18)
     board.run_algorithm()
