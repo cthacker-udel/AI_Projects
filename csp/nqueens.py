@@ -38,8 +38,9 @@ class Agenda:
         curr_rules = set()
         while len(self.rules) > 0:
             curr_rule = self.rules.pop(0)
+            print(curr_rule.destination.domain, curr_rule.source.domain)
             try:
-                if not curr_rule.test_consistency():
+                if not curr_rule.test_consistency() and len(curr_rule.source.domain) > 0 and len(curr_rule.destination.domain) > 0:
                     self.rules.append(
                         Rule(curr_rule.destination, curr_rule.source))
                     for each_connected in curr_rule.source.connected:
@@ -147,7 +148,7 @@ class StateGraph:
                 ac3_agenda.rules.append(Rule(each_connected, first_variable))
 
             is_consistent = ac3_agenda.check_arc_consistency()
-            if not is_consistent:
+            if not is_consistent or not all((len(x.domain) > 0 for x in self.variables)):
                 bad_choice = optimal_choice
                 for each_key in old_domains.items():
                     self.variables[each_key[0] -
@@ -158,5 +159,5 @@ class StateGraph:
 
 
 if __name__ == '__main__':
-    board = StateGraph()
+    board = StateGraph(6, 6)
     board.run_algorithm()
