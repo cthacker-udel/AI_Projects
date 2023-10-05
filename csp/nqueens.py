@@ -3,6 +3,15 @@ from typing import List, Set, Optional
 from helpers import check_is_value_valid_V2
 
 
+def filter_out_connected(key: int, node: BoardVariable) -> List[BoardVariable]:
+    filtered_connections: List[BoardVariable] = [node]
+    for each_node in node.connected:
+        if each_node.key == key:
+            continue
+        filtered_connections.append(each_node)
+    return filtered_connections
+
+
 def generate_id_from_key(key: int) -> str:
     """
         # Excel formula https://stackoverflow.com/a/182924
@@ -13,6 +22,8 @@ def generate_id_from_key(key: int) -> str:
         column_name = chr(ord('A') + mod) + column_name
         key = (key - mod) // 26
     return column_name
+
+# BEGIN ARC CONSISTENCY
 
 
 class Agenda:
@@ -27,7 +38,7 @@ class Agenda:
                 if not curr_rule.test_consistency() and len(curr_rule.source.domain) > 0 and len(curr_rule.destination.domain) > 0:
                     self.rules.append(
                         Rule(curr_rule.destination, curr_rule.source))
-                    for each_connected in curr_rule.source.connected:
+                    for each_connected in filter_out_connected(curr_rule.source.key, curr_rule.destination):
                         potential_rule = Rule(curr_rule.source, each_connected)
                         if each_connected.key != curr_rule.destination.key and str(potential_rule) not in curr_rules:
                             self.rules.append(
@@ -71,6 +82,8 @@ class Rule:
     def __str__(self: Rule) -> str:
         return f'{generate_id_from_key(self.source.key)} --> {generate_id_from_key(self.destination.key)}'
 
+# END ARC CONSISTENCY
+
 
 class BoardVariable:
     def __init__(self: BoardVariable, row: int, cols: int, domain: Optional[Set[int]] = None, connected: Optional[List[BoardVariable]] = None) -> None:
@@ -81,10 +94,21 @@ class BoardVariable:
         self.connected: List[BoardVariable] = [
         ] if not connected else connected
 
-    def clone(self: BoardVariable) -> BoardVariable:
+    def clone(self: BoardVariable, connected_exclusion_id: Optional[int] = None) -> BoardVariable:
         cloned = BoardVariable(self.key, self.cols)
         cloned.domain = set(x for x in self.domain)
-        cloned.connected = self.connected
+        connected_map: dict[int, set[int]] = {}
+        cloned.connected = []
+        for each_variable in self.connected:
+            if connected_exclusion_id is not None and connected_exclusion_id == each_variable.key:
+                connected_map[self.key] = set(self.domain)
+                continue
+            connected_map[each_variable.key] = set(each_variable.domain)
+
+        for [each_connected_key, each_connected_domain] in connected_map.items():
+            cloned.connected.append(BoardVariable(
+                each_connected_key, self.cols, each_connected_domain))
+
         return cloned
 
     def __str__(self: BoardVariable) -> str:
@@ -112,9 +136,12 @@ class StateNode:
         for each_variable_id in range(self.variable.key + 1, self.variable_count + 1):
             for each_variable in self.variable.connected:
                 if each_variable.key == each_variable_id:
-                    each_variable.connected = [self.variable.clone(
-                    )] + [x for x in self.variable.connected if x.key != each_variable_id]
+                    # found variable
+                    each_variable.connected = self.variable.clone(
+                        each_variable.key).connected
                     return each_variable
+
+        # fallback case
         return self.variable
 
     def __str__(self: StateNode) -> str:
@@ -144,9 +171,17 @@ class StateGraph:
 
     def print_moves(self: StateGraph, node: StateNode) -> None:
         total_variables = [node.variable] + node.variable.connected
+
+        domain_mapping: dict[int, set[int]] = {}
+
+        for i in range(1, self.rows + 1):
+            for each_node in total_variables:
+                if each_node.key == i:
+                    domain_mapping[i] = each_node.domain
+
         print_str = ''
-        for each_var in total_variables:
-            print_str += f'{generate_id_from_key(each_var.key)} = {each_var.domain}\n'
+        for i in range(1, self.rows + 1):
+            print_str += f'{generate_id_from_key(i)} = {domain_mapping[i]}\n'
         print(print_str)
 
     def run_algorithm(self: StateGraph) -> None:
@@ -161,15 +196,12 @@ class StateGraph:
         while len(move_stack) > 0:
             current_move = move_stack.pop()
 
-            if self.is_goal(current_move):
-                self.print_moves(current_move)
-                break
-
             if not current_move.explored and str(current_move) not in explored_states:
                 current_move.explored = True
                 explored_states.add(str(current_move))
                 ac3_agenda = Agenda()
                 for each_connected in current_move.variable.connected:
+                    # because it adds a rule with each_connected's .connected field having 0 values
                     ac3_agenda.rules.append(
                         Rule(current_move.variable, each_connected))
                     ac3_agenda.rules.append(
@@ -179,11 +211,16 @@ class StateGraph:
                     next_move = StateNode(
                         current_move.find_next_move(), self.rows)
                     next_move.parent = current_move
+
                     for each_value in next_move.variable.domain:
-                        move_stack.append(next_move.move(each_value))
+                        new_move = next_move.move(each_value)
+                        move_stack.append(new_move)
+                if self.is_goal(current_move) and is_consistent:
+                    self.print_moves(current_move)
+                    break
         print('exited')
 
 
 if __name__ == '__main__':
-    board = StateGraph(16, 12)
+    board = StateGraph(30, 30)
     board.run_algorithm()
