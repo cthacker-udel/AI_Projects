@@ -4,15 +4,48 @@ from enum import Enum
 from random import randint
 from graph import GraphNode, GraphNodeType
 
-# HELPERS
+
+# [ ] - Make sure the board is generating properly
+# [ ] - Decide to order the board, row 0 = bottom, or row 0 = top
+# [ ] - Debug algorithm running, make sure moves are being properly generated
+# [ ] - Analyze moves, ensure generated heuristic functions are working properly
+# [ ] - Run algorithm on simple move generation, ensuring that the maximum result is being picked
+# [ ] - Add minimax structure, such that the moves are iterated until the depth is reached, then the minimax tree is given all the paths to terminal nodes (ending depths)
+# [ ] - Test minimax structure, ensure is working correctly
+# [ ] - Add estimax structure, such that instead of the minimizer, we have a value estimator where each minimizer would be
+
+# pylint: disable=pointless-string-statement
+"""
+Notes:
+
+For each piece that belongs to the user, 2 moves or 4 moves are generated, should those 4 branches be the minimizers? and the maximizer is the root node.
+
+I think that might be the proper way to structure this adversarial search, and then at each layer (each move up to the root node), we apply the 
+maximizer/minimizer algorithm on the current node and it's 2 (or 4) children.
+
+This can then tie into alpha-beta pruning, which will allow us to cut off moves that will result in greater score then the minimizer's min (we only get to choose the smallest of the minimizer, anything greater then the minimizer's smallest can be pruned)
+
+
+"""
+
+"""
+  _    _      _                     
+ | |  | |    | |                    
+ | |__| | ___| |_ __   ___ _ __ ___ 
+ |  __  |/ _ \ | '_ \ / _ \ '__/ __|
+ | |  | |  __/ | |_) |  __/ |  \__ \
+ |_|  |_|\___|_| .__/ \___|_|  |___/
+               | |                  
+               |_|                  
+"""
 
 
 def generate_checkers_board(rows: int, cols: int) -> list[list[BoardPiece]]:
     board: list[list[BoardPiece]] = []
-    for i in range(1, rows + 1):
+    for i in range(0, rows):
         board_row: list[BoardPiece] = []
-        for j in range(1, cols + 1):
-            board_row.append(BoardPiece(i, j))
+        for j in range(0, cols):
+            board_row.append(BoardPiece(j, i))
         board.append(board_row[:])
         board_row = []
     return board
@@ -27,14 +60,14 @@ def init_board(state: CheckersState) -> CheckersState:
     for i in range(0, both_side_size):
         for j in range(0 if odds else 1, state.cols, 2):
             state.board[i][j].place_piece(CheckersPiece(
-                players[player], j, i, state.rows, state.cols))
+                players[player], i, j, state.rows, state.cols))
         odds = not odds
 
     player += 1
     for i in range(0, both_side_size):
         for j in range(0 if odds else 1, state.cols, 2):
             state.board[-1 * (i + 1)
-                        ][j].place_piece(CheckersPiece(players[player], j, i, state.rows, state.cols))
+                        ][j].place_piece(CheckersPiece(players[player], i, j, state.rows, state.cols))
         odds = not odds
 
     return state
@@ -178,8 +211,22 @@ def is_forced_jump(piece: CheckersPiece, board: CheckersState) -> bool:
 def sort_states_by_heuristic(states: list[CheckersState]) -> list[CheckersState]:
     return sorted(states, key=lambda x: x.generate_heuristic())
 
-# END HELPERS
 
+"""
+  ______           _   _    _      _                     
+ |  ____|         | | | |  | |    | |                    
+ | |__   _ __   __| | | |__| | ___| |_ __   ___ _ __ ___ 
+ |  __| | '_ \ / _` | |  __  |/ _ \ | '_ \ / _ \ '__/ __|
+ | |____| | | | (_| | | |  | |  __/ | |_) |  __/ |  \__ \
+ |______|_| |_|\__,_| |_|  |_|\___|_| .__/ \___|_|  |___/
+                                    | |                  
+                                    |_|                  
+"""
+
+
+###################
+# CHECKERS PLAYER
+###################
 
 class CheckersPlayer(Enum):
     """
@@ -190,6 +237,10 @@ class CheckersPlayer(Enum):
     """
     BOTTOM = 0,
     TOP = 1
+
+##################
+# CHECKERS PIECE
+##################
 
 
 class CheckersPiece:
@@ -265,6 +316,10 @@ class CheckersPiece:
         cloned = CheckersPiece(self.owner, self.x, self.y)
         return cloned
 
+################
+# BOARD PIECE
+################
+
 
 class BoardPiece:
     """
@@ -292,6 +347,13 @@ class BoardPiece:
         cloned.piece = self.piece.clone() if self.piece else None
         return cloned
 
+    def __str__(self: BoardPiece) -> str:
+        return 'E' if self.piece is None else f'{"T" if self.piece.owner == CheckersPlayer.TOP else "W"}'
+
+#################
+# CHECKERS MOVE
+#################
+
 
 class CheckersMove:
     """
@@ -315,6 +377,10 @@ class CheckersMove:
         self.to_y = to_y
         self.capture = capture
 
+##################
+# CHECKERS STATE
+##################
+
 
 class CheckersState:
     """
@@ -334,7 +400,7 @@ class CheckersState:
     def __init__(self: CheckersState, rows: int, cols: int, curr_turn: Optional[CheckersPlayer] = None, curr_board: Optional[list[list[BoardPiece]]] = None) -> None:
         self.turn: CheckersPlayer = [CheckersPlayer.BOTTOM, CheckersPlayer.TOP][randint(
             0, 1)] if not curr_turn else curr_turn
-        self.board: list[list[BoardPiece]] = [[x.clone() for x in self.board[y]] for y in range(rows)] if curr_board else generate_checkers_board(
+        self.board: list[list[BoardPiece]] = [[x.clone() for x in curr_board[y]] for y in range(rows)] if curr_board else generate_checkers_board(
             rows, cols)
         self.rows = rows
         self.cols = cols
@@ -552,6 +618,10 @@ class CheckersState:
         self.value += self.calculate_total_pieces_heuristic()
 
         return self.value
+
+######################
+# CHECKERS GRAPH NODE
+######################
 
 
 class CheckersGraphNode(GraphNode):
