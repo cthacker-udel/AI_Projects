@@ -1,4 +1,5 @@
 from __future__ import annotations
+import string
 from typing import Optional
 from enum import Enum
 from random import randint
@@ -29,14 +30,9 @@ This can then tie into alpha-beta pruning, which will allow us to cut off moves 
 """
 
 """
-  _    _      _                     
- | |  | |    | |                    
- | |__| | ___| |_ __   ___ _ __ ___ 
- |  __  |/ _ \ | '_ \ / _ \ '__/ __|
- | |  | |  __/ | |_) |  __/ |  \__ \
- |_|  |_|\___|_| .__/ \___|_|  |___/
-               | |                  
-               |_|                  
+░█░█░█▀▀░█░░░█▀█░█▀▀░█▀▄░█▀▀
+░█▀█░█▀▀░█░░░█▀▀░█▀▀░█▀▄░▀▀█
+░▀░▀░▀▀▀░▀▀▀░▀░░░▀▀▀░▀░▀░▀▀▀     
 """
 
 
@@ -52,7 +48,7 @@ def generate_checkers_board(rows: int, cols: int) -> list[list[BoardPiece]]:
 
 
 def init_board(state: CheckersState) -> CheckersState:
-    both_side_size = state.rows - 2
+    both_side_size = (state.rows - 2) // 2
     odds = True
     players = [CheckersPlayer.BOTTOM, CheckersPlayer.TOP]
     player = 0
@@ -213,35 +209,101 @@ def sort_states_by_heuristic(states: list[CheckersState]) -> list[CheckersState]
 
 
 """
-  ______           _   _    _      _                     
- |  ____|         | | | |  | |    | |                    
- | |__   _ __   __| | | |__| | ___| |_ __   ___ _ __ ___ 
- |  __| | '_ \ / _` | |  __  |/ _ \ | '_ \ / _ \ '__/ __|
- | |____| | | | (_| | | |  | |  __/ | |_) |  __/ |  \__ \
- |______|_| |_|\__,_| |_|  |_|\___|_| .__/ \___|_|  |___/
-                                    | |                  
-                                    |_|                  
+░█▀▀░█▀█░█▀▄░░░█░█░█▀▀░█░░░█▀█░█▀▀░█▀▄░█▀▀
+░█▀▀░█░█░█░█░░░█▀█░█▀▀░█░░░█▀▀░█▀▀░█▀▄░▀▀█
+░▀▀▀░▀░▀░▀▀░░░░▀░▀░▀▀▀░▀▀▀░▀░░░▀▀▀░▀░▀░▀▀▀            
 """
 
+#######################################
+#######################################
 
-###################
-# CHECKERS PLAYER
-###################
+"""
+░█▀▀░█▀█░█░█░█▄█░█▀▀
+░█▀▀░█░█░█░█░█░█░▀▀█
+░▀▀▀░▀░▀░▀▀▀░▀░▀░▀▀▀
+"""
 
 class CheckersPlayer(Enum):
     """
-    Represents a checkers player instance
-
-    Args:
-        Enum (_type_): Used for constructing a enum in python, have to create a custom class inheriting from the enum class
+    Represents the current player of the checkers game (TOP is top of the board, BOTTOM is bottom of the board)
     """
     BOTTOM = 0,
     TOP = 1
 
-##################
-# CHECKERS PIECE
-##################
+class CheckersMoves(Enum):
+    """
+    Represents the types of moves a checkers piece can execute
+    """
+    DIAG_TOP_LEFT = 0
+    DIAG_TOP_RIGHT = 1
+    DIAG_BOTTOM_LEFT = 2
+    DIAG_BOTTOM_RIGHT = 3
 
+"""
+░█▀▀░█▀█░█▀▄░░░█▀▀░█▀█░█░█░█▄█░█▀▀
+░█▀▀░█░█░█░█░░░█▀▀░█░█░█░█░█░█░▀▀█
+░▀▀▀░▀░▀░▀▀░░░░▀▀▀░▀░▀░▀▀▀░▀░▀░▀▀▀
+"""
+
+#######################################
+#######################################
+
+"""
+░█░█░▀█▀░▀█▀░█░░
+░█░█░░█░░░█░░█░░
+░▀▀▀░░▀░░▀▀▀░▀▀▀
+"""
+
+class BoardPiece:
+    """
+    Represents a cell (square) on the board, can be injected with a CheckersPiece instance
+
+    Arguments:
+        self (BoardPiece): The internal state
+        x (int): The x coordinate
+        y (int): The y coordinate
+
+    Returns:
+        The board square
+    """
+
+    def __init__(self: BoardPiece, x: int, y: int) -> None:
+        self.piece: Optional[CheckersPiece] = None
+        self.x = x
+        self.y = y
+
+    def place_piece(self: BoardPiece, checkers_piece: CheckersPiece) -> None:
+        self.piece = checkers_piece
+
+    def clone(self: BoardPiece) -> BoardPiece:
+        cloned = BoardPiece(self.x, self.y)
+        cloned.piece = self.piece.clone() if self.piece else None
+        return cloned
+
+    def __str__(self: BoardPiece) -> str:
+        return 'E' if self.piece is None else f'{"T" if self.piece.owner == CheckersPlayer.TOP else "W"}'
+
+class CheckersMove:
+    """
+    Represents the outline of a move in checkers
+
+    Arguments:
+        self (CheckersMove): The internal state
+        board (list[list[BoardPiece]]): Represents a 2D array of board pieces
+        from_x (int): The x coordinate where the piece is originating from
+        from_y (int): The y coordinate where the piece is originating from
+        to_x (int): The x coordinate where the piece is traveling to
+        to_y (int): The y coordinate where the piece is traveling to
+        capture (bool): Whether the piece is captured (field will be removed in future versions)
+    """
+
+    def __init__(self: CheckersMove, board: list[list[BoardPiece]], from_x: int, from_y: int, to_x: int, to_y: int, capture: bool = False):
+        self.board = board
+        self.from_x = from_x
+        self.from_y = from_y
+        self.to_x = to_x
+        self.to_y = to_y
+        self.capture = capture
 
 class CheckersPiece:
     """
@@ -315,72 +377,24 @@ class CheckersPiece:
     def clone(self: CheckersPiece) -> CheckersPiece:
         cloned = CheckersPiece(self.owner, self.x, self.y)
         return cloned
+    
+    def __str__(self: CheckersPiece) -> str:
+        return f'({self.x}, {self.y}) - {"T" if self.owner == CheckersPlayer.TOP else "B"}'
 
-################
-# BOARD PIECE
-################
+"""
+░█▀▀░█▀█░█▀▄░░░█░█░▀█▀░▀█▀░█░░
+░█▀▀░█░█░█░█░░░█░█░░█░░░█░░█░░
+░▀▀▀░▀░▀░▀▀░░░░▀▀▀░░▀░░▀▀▀░▀▀▀
+"""
 
+#######################################
+#######################################
 
-class BoardPiece:
-    """
-    Represents a cell (square) on the board, can be injected with a CheckersPiece instance
-
-    Arguments:
-        self (BoardPiece): The internal state
-        x (int): The x coordinate
-        y (int): The y coordinate
-
-    Returns:
-        The board square
-    """
-
-    def __init__(self: BoardPiece, x: int, y: int) -> None:
-        self.piece: Optional[CheckersPiece] = None
-        self.x = x
-        self.y = y
-
-    def place_piece(self: BoardPiece, checkers_piece: CheckersPiece) -> None:
-        self.piece = checkers_piece
-
-    def clone(self: BoardPiece) -> BoardPiece:
-        cloned = BoardPiece(self.x, self.y)
-        cloned.piece = self.piece.clone() if self.piece else None
-        return cloned
-
-    def __str__(self: BoardPiece) -> str:
-        return 'E' if self.piece is None else f'{"T" if self.piece.owner == CheckersPlayer.TOP else "W"}'
-
-#################
-# CHECKERS MOVE
-#################
-
-
-class CheckersMove:
-    """
-    Represents the outline of a move in checkers
-
-    Arguments:
-        self (CheckersMove): The internal state
-        board (list[list[BoardPiece]]): Represents a 2D array of board pieces
-        from_x (int): The x coordinate where the piece is originating from
-        from_y (int): The y coordinate where the piece is originating from
-        to_x (int): The x coordinate where the piece is traveling to
-        to_y (int): The y coordinate where the piece is traveling to
-        capture (bool): Whether the piece is captured (field will be removed in future versions)
-    """
-
-    def __init__(self: CheckersMove, board: list[list[BoardPiece]], from_x: int, from_y: int, to_x: int, to_y: int, capture: bool = False):
-        self.board = board
-        self.from_x = from_x
-        self.from_y = from_y
-        self.to_x = to_x
-        self.to_y = to_y
-        self.capture = capture
-
-##################
-# CHECKERS STATE
-##################
-
+"""
+░█▀▀░█▀█░█▀▄░█▀▀
+░█░░░█░█░█▀▄░█▀▀
+░▀▀▀░▀▀▀░▀░▀░▀▀▀
+"""
 
 class CheckersState:
     """
@@ -450,6 +464,9 @@ class CheckersState:
         return processed_moves
 
     def generate_potential_moves(self: CheckersState) -> list[CheckersMove]:
+        # if is king, then can make all 4 jumps, if is not, 
+        # check if top then only down left down right, if bottom then only up left up right
+
         curr_turn_pieces: list[CheckersPiece] = []
         cloned_board = self.clone_board()
         for each_board_row in cloned_board:
@@ -462,58 +479,7 @@ class CheckersState:
         for each_owner_piece in curr_turn_pieces:
             piece_x = each_owner_piece.x
             piece_y = each_owner_piece.y
-            if each_owner_piece.is_king:
-                try:
-                    # DIAG DOWN LEFT
-                    diag_down_left_x = piece_x - 1
-                    diag_down_left_y = piece_y - 1
-                    if cloned_board[diag_down_left_x][diag_down_left_y].piece is not None and cloned_board[diag_down_left_x][diag_down_left_y].piece.owner != self.turn:  # type: ignore
-                        # check if is opponents, then check for jump
-                        if cloned_board[diag_down_left_x - 1][diag_down_left_y - 1] is None:
-                            # can make jump
-                            potential_moves.append(CheckersMove(self.clone_board(
-                            ), piece_x, piece_y, diag_down_left_x - 1, diag_down_left_y - 1, True))
-                except:
-                    pass
-
-                try:
-                    # DIAG DOWN RIGHT
-                    diag_down_right_x = piece_x + 1
-                    diag_down_right_y = piece_y - 1
-                    if cloned_board[diag_down_right_x][diag_down_right_y].piece is not None and cloned_board[diag_down_right_x][diag_down_right_y].piece.owner != self.turn:  # type: ignore
-                        # check if is opponents, then check for jump
-                        if cloned_board[diag_down_right_x + 1][diag_down_right_y - 1] is None:
-                            potential_moves.append(CheckersMove(self.clone_board(
-                            ), piece_x, piece_y, diag_down_right_x + 1, diag_down_right_y - 1, True))
-                except:
-                    pass
-
-            else:
-                try:
-                    # DIAG UP LEFTS
-                    diag_up_left_x = piece_x - 1
-                    diag_up_left_y = piece_y + 1
-                    if cloned_board[diag_up_left_x][diag_up_left_y].piece is not None and cloned_board[diag_up_left_x][diag_up_left_y].piece.owner != self.turn:  # type: ignore
-                        # check if is opponents, then check for jump
-                        if cloned_board[diag_up_left_x - 1][diag_up_left_y + 1].piece is None:
-                            # can make jump
-                            potential_moves.append(CheckersMove(self.clone_board(
-                            ), piece_x, piece_y, diag_up_left_x - 1, diag_up_left_y + 1, True))
-                except:
-                    pass
-
-                try:
-                    # DIAG UP RIGHT
-                    diag_up_right_x = piece_x + 1
-                    diag_up_right_y = piece_y + 1
-                    if cloned_board[diag_up_right_x][diag_up_right_y].piece is not None and cloned_board[diag_up_right_x][diag_up_right_y].piece.owner != self.turn:  # type: ignore
-                        # check if is opponents, then check for jump
-                        if cloned_board[diag_up_right_x + 1][diag_up_right_y + 1] is None:
-                            # can make jump
-                            potential_moves.append(CheckersMove(self.clone_board(
-                            ), piece_x, piece_y, diag_up_right_x + 1, diag_up_right_y + 1, True))
-                except:
-                    pass
+            
         self.moves = potential_moves
         return potential_moves
 
@@ -618,10 +584,19 @@ class CheckersState:
         self.value += self.calculate_total_pieces_heuristic()
 
         return self.value
-
-######################
-# CHECKERS GRAPH NODE
-######################
+    
+    def __str__(self: CheckersState) -> str:
+        stringified_rows = []
+        for each_row in self.board:
+            stringified_rows.append('\t'.join([str(y) for y in each_row]))
+        return '\n'.join(stringified_rows)
+    
+    def print_board(self: CheckersState) -> None:
+        stringified_rows = []
+        for each_row in self.board:
+            stringified_rows.append('\t'.join([str(y) for y in each_row]))
+        for each_row in stringified_rows:
+            print(each_row)
 
 
 class CheckersGraphNode(GraphNode):
@@ -664,6 +639,7 @@ class CheckersGraphNode(GraphNode):
             return None
 
         move_queue = [self.state]
+        depth_moves = []
         while len(move_queue) > 0:
             # DFS
             curr_move = move_queue.pop()
@@ -676,13 +652,36 @@ class CheckersGraphNode(GraphNode):
                     move_queue.append(each_move)
                     each_move.parent = curr_move
                     # pause when moves are ~x depth down, then structure minimax tree for selection of moves to execute
-        print('done')
+            elif curr_move.depth == depth:
+                depth_moves.append(curr_move)
+        print(depth_moves)
 
+"""
+░█▀▀░█▀█░█▀▄░░░█▀▀░█▀█░█▀▄░█▀▀
+░█▀▀░█░█░█░█░░░█░░░█░█░█▀▄░█▀▀
+░▀▀▀░▀░▀░▀▀░░░░▀▀▀░▀▀▀░▀░▀░▀▀▀
+"""
+
+#######################################
+#######################################
+
+"""
+░█▄█░█▀█░▀█▀░█▀█
+░█░█░█▀█░░█░░█░█
+░▀░▀░▀░▀░▀▀▀░▀░▀
+"""
 
 if __name__ == '__main__':
-    # Adversarial network, calculates a strategy (policy) which recommends a move for the next state
     g: CheckersGraphNode = CheckersGraphNode().set_spec(
         GraphNodeType.MAX)  # type: ignore
     g.state = CheckersState(8, 8)
+    
+    # Adversarial network, calculates a strategy (policy) which recommends a move for the next state
     init_board(g.state)
     g.run_iterative_deepening_dfs(5)
+
+"""
+░█▀▀░█▀█░█▀▄░░░█▄█░█▀█░▀█▀░█▀█
+░█▀▀░█░█░█░█░░░█░█░█▀█░░█░░█░█
+░▀▀▀░▀░▀░▀▀░░░░▀░▀░▀░▀░▀▀▀░▀░▀
+"""
