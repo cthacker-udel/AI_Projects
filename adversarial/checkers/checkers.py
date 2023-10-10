@@ -35,6 +35,17 @@ This can then tie into alpha-beta pruning, which will allow us to cut off moves 
 ░▀░▀░▀▀▀░▀▀▀░▀░░░▀▀▀░▀░▀░▀▀▀     
 """
 
+def move_directions_map(move_direction: CheckersMoves, row: int, col: int, calc_jump: bool = False) -> tuple[int, int]:
+    if move_direction == CheckersMoves.DIAG_BOTTOM_LEFT:
+        return (row - (2 if calc_jump else 1), col - (2 if calc_jump else 1))
+    elif move_direction == CheckersMoves.DIAG_BOTTOM_RIGHT:
+        return (row - (2 if calc_jump else 1), col + (2 if calc_jump else 1))
+    elif move_direction == CheckersMoves.DIAG_TOP_LEFT:
+        return (row + (2 if calc_jump else 1), col - (2 if calc_jump else 1))
+    else:
+        # DIAG_TOP_RIGHT
+        return (row + (2 if calc_jump else 1), col + (2 if calc_jump else 1))
+
 
 def generate_checkers_board(rows: int, cols: int) -> list[list[BoardPiece]]:
     board: list[list[BoardPiece]] = []
@@ -49,8 +60,8 @@ def generate_checkers_board(rows: int, cols: int) -> list[list[BoardPiece]]:
 
 def init_board(state: CheckersState) -> CheckersState:
     both_side_size = (state.rows - 2) // 2
-    odds = True
-    players = [CheckersPlayer.BOTTOM, CheckersPlayer.TOP]
+    odds = False
+    players = [CheckersPlayer.TOP, CheckersPlayer.BOTTOM]
     player = 0
 
     for i in range(0, both_side_size):
@@ -60,10 +71,11 @@ def init_board(state: CheckersState) -> CheckersState:
         odds = not odds
 
     player += 1
+    odds = True
     for i in range(0, both_side_size):
         for j in range(0 if odds else 1, state.cols, 2):
             state.board[-1 * (i + 1)
-                        ][j].place_piece(CheckersPiece(players[player], i, j, state.rows, state.cols))
+                        ][j].place_piece(CheckersPiece(players[player], state.rows - (i + 1), j, state.rows, state.cols))
         odds = not odds
 
     return state
@@ -479,6 +491,35 @@ class CheckersState:
         for each_owner_piece in curr_turn_pieces:
             piece_x = each_owner_piece.x
             piece_y = each_owner_piece.y
+            move_directions = []
+            if each_owner_piece.is_king:
+                move_directions.extend([CheckersMoves.DIAG_BOTTOM_LEFT, CheckersMoves.DIAG_BOTTOM_RIGHT, CheckersMoves.DIAG_TOP_LEFT, CheckersMoves.DIAG_TOP_RIGHT])
+            else:
+                if each_owner_piece.owner == CheckersPlayer.TOP:
+                    move_directions.extend([CheckersMoves.DIAG_BOTTOM_LEFT, CheckersMoves.DIAG_BOTTOM_RIGHT])
+                else:
+                    move_directions.extend([CheckersMoves.DIAG_TOP_LEFT, CheckersMoves.DIAG_TOP_RIGHT])
+            
+            for each_move_direction in move_directions:
+                calculated_coordinates = move_directions_map(each_move_direction, piece_x, piece_y)
+                # check if it's a valid move first off
+                try:
+                    found_piece = cloned_board[calculated_coordinates[1]][calculated_coordinates[0]]
+                    if found_piece is None or calculated_coordinates[0] < 0 or calculated_coordinates[1] < 0:
+                        continue
+                    elif found_piece.piece is None:
+                        potential_moves.append(CheckersMove(cloned_board, piece_x, piece_y, calculated_coordinates[0], calculated_coordinates[1]))
+                    elif found_piece.piece.owner == each_owner_piece.owner:
+                        continue
+                    else:
+                        jump_coords = move_directions_map(each_move_direction, piece_x, piece_y, True)
+                        found_jump_piece = cloned_board[jump_coords[1]][jump_coords[0]]
+                        if found_jump_piece is None or found_jump_piece.piece is not None:
+                            continue
+                        elif found_jump_piece.piece is None:
+                            potential_moves.append(CheckersMove(cloned_board, piece_x, piece_y, jump_coords[0], jump_coords[1]))
+                except:
+                    pass
             
         self.moves = potential_moves
         return potential_moves
