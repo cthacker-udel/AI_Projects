@@ -35,16 +35,28 @@ This can then tie into alpha-beta pruning, which will allow us to cut off moves 
 ░▀░▀░▀▀▀░▀▀▀░▀░░░▀▀▀░▀░▀░▀▀▀     
 """
 
+def print_board(board: list[list[BoardPiece]]) -> None:
+    row_output = ''
+    for each_board_row in board:
+        row = []
+        for each_tile in each_board_row:
+            row.append(f'E {each_tile.x, each_tile.y}' if each_tile.piece is None else f'T {each_tile.x, each_tile.y}' if each_tile.piece.owner == CheckersPlayer.TOP else f'B {each_tile.x, each_tile.y}')
+        row_output += '\t'.join(row) + "\n"
+        row = []
+    print(row_output)
+        
+
+
 def move_directions_map(move_direction: CheckersMoves, row: int, col: int, calc_jump: bool = False) -> tuple[int, int]:
     if move_direction == CheckersMoves.DIAG_BOTTOM_LEFT:
-        return (row - (2 if calc_jump else 1), col - (2 if calc_jump else 1))
-    elif move_direction == CheckersMoves.DIAG_BOTTOM_RIGHT:
-        return (row - (2 if calc_jump else 1), col + (2 if calc_jump else 1))
-    elif move_direction == CheckersMoves.DIAG_TOP_LEFT:
         return (row + (2 if calc_jump else 1), col - (2 if calc_jump else 1))
+    elif move_direction == CheckersMoves.DIAG_BOTTOM_RIGHT:
+        return (row + (2 if calc_jump else 1), col + (2 if calc_jump else 1))
+    elif move_direction == CheckersMoves.DIAG_TOP_LEFT:
+        return (row - (2 if calc_jump else 1), col - (2 if calc_jump else 1))
     else:
         # DIAG_TOP_RIGHT
-        return (row + (2 if calc_jump else 1), col + (2 if calc_jump else 1))
+        return (row - (2 if calc_jump else 1), col + (2 if calc_jump else 1))
 
 
 def generate_checkers_board(rows: int, cols: int) -> list[list[BoardPiece]]:
@@ -67,7 +79,7 @@ def init_board(state: CheckersState) -> CheckersState:
     for i in range(0, both_side_size):
         for j in range(0 if odds else 1, state.cols, 2):
             state.board[i][j].place_piece(CheckersPiece(
-                players[player], i, j, state.rows, state.cols))
+                players[player], state.board[i][j].x, state.board[i][j].y, state.rows, state.cols))
         odds = not odds
 
     player += 1
@@ -75,7 +87,7 @@ def init_board(state: CheckersState) -> CheckersState:
     for i in range(0, both_side_size):
         for j in range(0 if odds else 1, state.cols, 2):
             state.board[-1 * (i + 1)
-                        ][j].place_piece(CheckersPiece(players[player], state.rows - (i + 1), j, state.rows, state.cols))
+                        ][j].place_piece(CheckersPiece(players[player], state.board[-1 * (i + 1)][j].x, state.board[-1 * (i + 1)][j].y, state.rows, state.cols))
         odds = not odds
 
     return state
@@ -287,6 +299,9 @@ class BoardPiece:
     def place_piece(self: BoardPiece, checkers_piece: CheckersPiece) -> None:
         self.piece = checkers_piece
 
+    def stringify_owner(self: BoardPiece) -> str:
+        return 'E' if self.piece is None else 'T' if self.piece.owner == CheckersPlayer.TOP else 'B'
+
     def clone(self: BoardPiece) -> BoardPiece:
         cloned = BoardPiece(self.x, self.y)
         cloned.piece = self.piece.clone() if self.piece else None
@@ -387,6 +402,7 @@ class CheckersPiece:
         return self.value
 
     def clone(self: CheckersPiece) -> CheckersPiece:
+        print(self.x, self.y)
         cloned = CheckersPiece(self.owner, self.x, self.y)
         return cloned
     
@@ -452,6 +468,8 @@ class CheckersState:
         for each_row in self.board:
             sub_row = []
             for each_board_tile in each_row:
+                astr = f'cloning tile {each_board_tile.x, each_board_tile.y}' + (f' {each_board_tile.piece.x, each_board_tile.piece.y}' if each_board_tile.piece is not None else '')
+                print(astr)
                 sub_row.append(each_board_tile.clone())
             cloned_board.append(sub_row)
             sub_row = []
@@ -481,8 +499,14 @@ class CheckersState:
 
         curr_turn_pieces: list[CheckersPiece] = []
         cloned_board = self.clone_board()
+        print_board(cloned_board)
         for each_board_row in cloned_board:
             for each_board_tile in each_board_row:
+                if each_board_tile.piece is not None:
+                    print(f'adding piece {each_board_tile.x, each_board_tile.y} {each_board_tile.piece.x, each_board_tile.piece.y} {each_board_tile.stringify_owner()}')
+                else:
+                    print(f'adding piece {each_board_tile.x, each_board_tile.y} {each_board_tile.stringify_owner()}')
+
                 # current piece owner is the current turn's player
                 if each_board_tile.piece is not None and each_board_tile.piece.owner == self.turn:
                     curr_turn_pieces.append(each_board_tile.piece)
@@ -501,10 +525,10 @@ class CheckersState:
                     move_directions.extend([CheckersMoves.DIAG_TOP_LEFT, CheckersMoves.DIAG_TOP_RIGHT])
             
             for each_move_direction in move_directions:
-                calculated_coordinates = move_directions_map(each_move_direction, piece_x, piece_y)
+                calculated_coordinates = move_directions_map(each_move_direction, piece_y, piece_x)
                 # check if it's a valid move first off
                 try:
-                    found_piece = cloned_board[calculated_coordinates[1]][calculated_coordinates[0]]
+                    found_piece = cloned_board[calculated_coordinates[0]][calculated_coordinates[1]]
                     if found_piece is None or calculated_coordinates[0] < 0 or calculated_coordinates[1] < 0:
                         continue
                     elif found_piece.piece is None:
