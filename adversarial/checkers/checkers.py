@@ -6,8 +6,8 @@ from random import randint
 from graph import GraphNode, GraphNodeType
 
 
-# [ ] - Make sure the board is generating properly
-# [ ] - Decide to order the board, row 0 = bottom, or row 0 = top
+# [X] - Make sure the board is generating properly
+# [X] - Decide to order the board, row 0 = bottom, or row 0 = top
 # [ ] - Debug algorithm running, make sure moves are being properly generated
 # [ ] - Analyze moves, ensure generated heuristic functions are working properly
 # [ ] - Run algorithm on simple move generation, ensuring that the maximum result is being picked
@@ -223,12 +223,14 @@ def sort_states_by_heuristic(states: list[CheckersState]) -> list[CheckersState]
 ░▀▀▀░▀░▀░▀▀▀░▀░▀░▀▀▀
 """
 
+
 class CheckersPlayer(Enum):
     """
     Represents the current player of the checkers game (TOP is top of the board, BOTTOM is bottom of the board)
     """
     BOTTOM = 0,
     TOP = 1
+
 
 class CheckersMoves(Enum):
     """
@@ -238,6 +240,11 @@ class CheckersMoves(Enum):
     DIAG_TOP_RIGHT = 1
     DIAG_BOTTOM_LEFT = 2
     DIAG_BOTTOM_RIGHT = 3
+    CAPTURE_TOP_LEFT = 4
+    CAPTURE_TOP_RIGHT = 5
+    CAPTURE_BOTTOM_LEFT = 6
+    CAPTURE_BOTTOM_RIGHT = 7
+
 
 """
 ░█▀▀░█▀█░█▀▄░░░█▀▀░█▀█░█░█░█▄█░█▀▀
@@ -253,6 +260,7 @@ class CheckersMoves(Enum):
 ░█░█░░█░░░█░░█░░
 ░▀▀▀░░▀░░▀▀▀░▀▀▀
 """
+
 
 class BoardPiece:
     """
@@ -283,6 +291,7 @@ class BoardPiece:
     def __str__(self: BoardPiece) -> str:
         return 'E' if self.piece is None else f'{"T" if self.piece.owner == CheckersPlayer.TOP else "W"}'
 
+
 class CheckersMove:
     """
     Represents the outline of a move in checkers
@@ -305,6 +314,7 @@ class CheckersMove:
         self.to_y = to_y
         self.capture = capture
 
+
 class CheckersPiece:
     """
     Represents a checkers piece, aka an actual piece the user can play with
@@ -312,6 +322,8 @@ class CheckersPiece:
     Arguments:
         self (CheckersPiece): The internal state
         owner (CheckersPlayer): The owner of the checkers piece
+        is_king (bool): Whether the piece is king
+        value (int): The value of the piece (it's computed heuristic)
         x (int): The x coordinate of the checkers piece
         y (int): The y coordinate of the checkers piece
         rows (int): The total amount of rows in the board
@@ -377,9 +389,10 @@ class CheckersPiece:
     def clone(self: CheckersPiece) -> CheckersPiece:
         cloned = CheckersPiece(self.owner, self.x, self.y)
         return cloned
-    
+
     def __str__(self: CheckersPiece) -> str:
         return f'({self.x}, {self.y}) - {"T" if self.owner == CheckersPlayer.TOP else "B"}'
+
 
 """
 ░█▀▀░█▀█░█▀▄░░░█░█░▀█▀░▀█▀░█░░
@@ -395,6 +408,7 @@ class CheckersPiece:
 ░█░░░█░█░█▀▄░█▀▀
 ░▀▀▀░▀▀▀░▀░▀░▀▀▀
 """
+
 
 class CheckersState:
     """
@@ -450,7 +464,7 @@ class CheckersState:
         cloned_state.explored = False
 
         moving_piece = cloned_state.board[move.from_y][move.from_x]
-        del cloned_state.board[move.from_y][move.from_x]
+        cloned_state.board[move.from_y][move.from_x].piece = None
 
         cloned_state.board[move.to_y][move.to_x] = moving_piece
         cloned_state.next_turn()
@@ -464,8 +478,12 @@ class CheckersState:
         return processed_moves
 
     def generate_potential_moves(self: CheckersState) -> list[CheckersMove]:
-        # if is king, then can make all 4 jumps, if is not, 
+        # if is king, then can make all 4 jumps, if is not,
         # check if top then only down left down right, if bottom then only up left up right
+        bottom_team_moves = [CheckersMoves.DIAG_TOP_LEFT, CheckersMoves.DIAG_TOP_RIGHT,
+                             CheckersMoves.CAPTURE_TOP_LEFT, CheckersMoves.CAPTURE_TOP_RIGHT]
+        top_team_moves = [CheckersMoves.DIAG_BOTTOM_LEFT, CheckersMoves.DIAG_BOTTOM_RIGHT,
+                          CheckersMoves.CAPTURE_BOTTOM_LEFT, CheckersMoves.CAPTURE_BOTTOM_RIGHT]
 
         curr_turn_pieces: list[CheckersPiece] = []
         cloned_board = self.clone_board()
@@ -477,9 +495,48 @@ class CheckersState:
 
         potential_moves: list[CheckersMove] = []
         for each_owner_piece in curr_turn_pieces:
-            piece_x = each_owner_piece.x
-            piece_y = each_owner_piece.y
-            
+            x = each_owner_piece.x
+            y = each_owner_piece.y
+            rightx_ind, leftx_ind, upy_ind, downy_ind, capture_rightx_ind, capture_leftx_ind, capture_upy_ind, capture_downy_ind = x + \
+                1, x - 1, y + 1, y - 1, x + 2, x - 2, y + 2, y - 2
+            diag_ur_ind, diag_ul_ind, diag_dr_ind, diag_dl_ind, capture_ur_ind, capture_ul_ind, capture_dr_ind, capture_dl_ind = (rightx_ind, upy_ind), (leftx_ind, upy_ind), (rightx_ind, downy_ind), (
+                leftx_ind, downy_ind), (capture_rightx_ind, capture_upy_ind), (capture_leftx_ind, capture_upy_ind), (capture_rightx_ind, capture_downy_ind), (capture_leftx_ind, capture_downy_ind)
+
+            top_team_coords = [diag_dr_ind, diag_dl_ind,
+                               capture_dr_ind, capture_dl_ind]
+            bottom_team_coords = [diag_ur_ind,
+                                  diag_ul_ind, capture_ur_ind, capture_ul_ind]
+
+            is_bottom_team = each_owner_piece.owner == CheckersPlayer.BOTTOM
+            move_types = bottom_team_moves if is_bottom_team else top_team_moves
+
+            if each_owner_piece.is_king:
+                # can move both directions
+                move_types.extend(
+                    top_team_moves if is_bottom_team else bottom_team_moves)
+                if is_bottom_team:
+                    bottom_team_coords.extend(top_team_coords)
+                else:
+                    top_team_coords.extend(bottom_team_coords)
+
+            coords = bottom_team_coords if is_bottom_team else top_team_coords
+            for ind, each_move in enumerate(move_types):
+                [calc_x, calc_y] = coords[ind]
+                match each_move:
+                    case CheckersMoves.DIAG_TOP_RIGHT | CheckersMoves.DIAG_TOP_LEFT | CheckersMoves.DIAG_BOTTOM_RIGHT | CheckersMoves.DIAG_BOTTOM_LEFT:
+                        if cloned_board[calc_y][calc_x].piece is None:
+                            potential_moves.append(CheckersMove(
+                                cloned_board, x, y, calc_x, calc_y))
+                        break
+                    case CheckersMoves.CAPTURE_TOP_RIGHT | CheckersMoves.CAPTURE_TOP_LEFT | CheckersMoves.CAPTURE_BOTTOM_RIGHT | CheckersMoves.CAPTURE_BOTTOM_LEFT:
+                        [diag_x, diag_y] = coords[ind % 4]
+                        jump_piece = cloned_board[calc_y][calc_x].piece
+                        middle_piece = cloned_board[diag_y][diag_x].piece
+                        if jump_piece is None and middle_piece is not None and middle_piece.owner is not each_owner_piece.owner:
+                            potential_moves.append(CheckersMove(
+                                cloned_board, x, y, calc_x, calc_y, True))
+                        break
+
         self.moves = potential_moves
         return potential_moves
 
@@ -584,13 +641,13 @@ class CheckersState:
         self.value += self.calculate_total_pieces_heuristic()
 
         return self.value
-    
+
     def __str__(self: CheckersState) -> str:
         stringified_rows = []
         for each_row in self.board:
             stringified_rows.append('\t'.join([str(y) for y in each_row]))
         return '\n'.join(stringified_rows)
-    
+
     def print_board(self: CheckersState) -> None:
         stringified_rows = []
         for each_row in self.board:
@@ -656,6 +713,7 @@ class CheckersGraphNode(GraphNode):
                 depth_moves.append(curr_move)
         print(depth_moves)
 
+
 """
 ░█▀▀░█▀█░█▀▄░░░█▀▀░█▀█░█▀▄░█▀▀
 ░█▀▀░█░█░█░█░░░█░░░█░█░█▀▄░█▀▀
@@ -675,7 +733,7 @@ if __name__ == '__main__':
     g: CheckersGraphNode = CheckersGraphNode().set_spec(
         GraphNodeType.MAX)  # type: ignore
     g.state = CheckersState(8, 8)
-    
+
     # Adversarial network, calculates a strategy (policy) which recommends a move for the next state
     init_board(g.state)
     g.run_iterative_deepening_dfs(5)
