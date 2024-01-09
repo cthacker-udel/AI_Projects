@@ -580,7 +580,6 @@ class CheckersState:
                             if jump_piece is None and middle_piece is not None and middle_piece.owner is not each_owner_piece.owner:
                                 potential_moves.append(CheckersMove(
                                     cloned_board, x, y, calc_x, calc_y, True, diag_x, diag_y))
-                                print('capturing!')
 
         self.moves = potential_moves
         return potential_moves
@@ -700,6 +699,14 @@ class CheckersState:
         for each_row in stringified_rows:
             print(each_row)
 
+    def is_winner(self: CheckersState) -> bool:
+        pieces_owners = []
+        for each_row in self.board:
+            for each_tile in each_row:
+                if each_tile.piece is not None and not each_tile.piece.owner in pieces_owners:
+                    pieces_owners.append(each_tile.piece.owner)
+        return len(pieces_owners) == 1
+
 
 class CheckersGraphNode(GraphNode):
     """
@@ -740,18 +747,21 @@ class CheckersGraphNode(GraphNode):
         if self.state is None:
             return None
 
+        winning_states: list[CheckersState] = []
         move_queue = [self.state]
         depth_moves: list[CheckersState] = []
         while len(move_queue) > 0:
             # DFS
             curr_move = move_queue.pop(0)
+
+            if curr_move.is_winner():
+                winning_states.append(curr_move)
+                continue
+
             if not curr_move.explored and curr_move.depth < depth:
-                print('move count = ', curr_move.count_pieces())
                 curr_move.generate_potential_moves()
                 applied_moves = sort_states_by_heuristic(
                     curr_move.process_moves())
-                print('sorted = ', ' '.join(
-                    [f'{x.count_pieces()}' for x in applied_moves]))
                 for each_move in applied_moves:
                     move_queue.append(each_move)
                     each_move.parent = curr_move
@@ -759,6 +769,7 @@ class CheckersGraphNode(GraphNode):
             elif curr_move.depth == depth:
                 depth_moves.append(curr_move)
         depth_moves = sort_states_by_heuristic(depth_moves)
+        print(' '.join([f'{x.count_pieces()}' for x in depth_moves]))
 
 
 """
@@ -783,7 +794,7 @@ if __name__ == '__main__':
 
     # Adversarial network, calculates a strategy (policy) which recommends a move for the next state
     init_board(g.state)
-    g.run_iterative_deepening_dfs(5)
+    g.run_iterative_deepening_dfs(10)
 
 """
 ░█▀▀░█▀█░█▀▄░░░█▄█░█▀█░▀█▀░█▀█
