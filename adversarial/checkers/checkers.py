@@ -4,6 +4,8 @@ from time import sleep
 from typing import Optional
 from enum import Enum
 from random import randint
+
+from designer import play_music
 from graph import GraphNode, GraphNodeType
 
 
@@ -260,6 +262,14 @@ class CheckersMoves(Enum):
     CAPTURE_BOTTOM_RIGHT = 7
 
 
+class CheckersTurn(Enum):
+    """
+    Represents who's turn it is
+    """
+    USER = 0,
+    CPU = 1
+
+
 """
 ░█▀▀░█▀█░█▀▄░░░█▀▀░█▀█░█░█░█▄█░█▀▀
 ░█▀▀░█░█░█░█░░░█▀▀░█░█░█░█░█░█░▀▀█
@@ -462,6 +472,8 @@ class CheckersState:
         self.explored: bool = False
         self.parent: Optional[CheckersState] = None
         self.depth = 1
+        self.applied_move_str: str = ''
+        self.applied_move: Optional[CheckersMove] = None
 
     def next_turn(self: CheckersState) -> None:
         self.turn = CheckersPlayer.BOTTOM if self.turn == CheckersPlayer.TOP else CheckersPlayer.TOP
@@ -477,14 +489,6 @@ class CheckersState:
 
         return cloned_state
 
-    def count_pieces(self: CheckersState) -> int:
-        ct = 0
-        for each_row in self.board:
-            for each_piece in each_row:
-                if each_piece.piece is not None:
-                    ct += 1
-        return ct
-
     def clone_board(self: CheckersState) -> list[list[BoardPiece]]:
         cloned_board: list[list[BoardPiece]] = []
         for each_row in self.board:
@@ -495,7 +499,7 @@ class CheckersState:
             sub_row = []
         return cloned_board
 
-    def process_move(self: CheckersState, move: CheckersMove) -> CheckersState:
+    def process_move(self: CheckersState, move: Optional[CheckersMove]) -> CheckersState:
         cloned_state = self.clone()
         cloned_state.explored = False
 
@@ -509,6 +513,8 @@ class CheckersState:
 
         cloned_state.board[move.from_y][move.from_x].piece = None
         cloned_state.board[move.to_y][move.to_x] = moving_piece
+        cloned_state.applied_move_str = str(move)
+        cloned_state.applied_move = move
 
         cloned_state.next_turn()
         cloned_state.depth += 1
@@ -719,9 +725,13 @@ class CheckersGraphNode(GraphNode):
         The instantiated state
     """
 
-    def __init__(self: CheckersGraphNode) -> None:
+    def __init__(self: CheckersGraphNode, spec: GraphNodeType, flip_spec: bool = False, state: Optional[CheckersState] = None) -> None:
         super().__init__()
-        self.state: Optional[CheckersState] = None
+        self.state: Optional[CheckersState] = state
+        self.spec = spec if not flip_spec else GraphNodeType.MIN if spec == GraphNodeType.MAX else GraphNodeType.MAX
+        self.children: list[CheckersGraphNode] = []
+        self.parent: Optional[CheckersGraphNode] = None
+        self.is_winning_move: bool = False
 
     def set_state(self: CheckersGraphNode, state: CheckersState) -> None:
         self.state = state
@@ -742,34 +752,73 @@ class CheckersGraphNode(GraphNode):
         # only 1 player left on board
         return len(player_count.keys()) == 1
 
-    def run_iterative_deepening_dfs(self: CheckersGraphNode, depth: int) -> None:
+    def __str__(self: CheckersGraphNode):
+        str_board = []
+        for each_row in self.state.board:
+            sub_board = []
+            for each_piece in each_row:
+                sub_board.append(str(each_piece))
+            str_board.append(''.join(sub_board))
+        return ''.join(str_board)
 
-        if self.state is None:
-            return None
 
-        winning_states: list[CheckersState] = []
-        move_queue = [self.state]
-        depth_moves: list[CheckersState] = []
-        while len(move_queue) > 0:
-            # DFS
-            curr_move = move_queue.pop(0)
+def recursive_deepening_dfs(curr_node: CheckersGraphNode, visited_states: Optional[dict[str, int]] = None, depth_limit=5):
+    if visited_states is None:
+        visited_states = {}
 
-            if curr_move.is_winner():
-                winning_states.append(curr_move)
-                continue
+    if str(curr_node) in visited_states or curr_node.state.depth == depth_limit or curr_node.is_goal_state():
+        is_goal = curr_node.is_goal_state()
+        curr_node.spec = GraphNodeType.TERMINAL
+        curr_node.is_winning_move = is_goal
+        curr_node.value = curr_node.state.generate_heuristic() if str(
+            curr_node) not in visited_states else visited_states[str(curr_node)]
+        visited_states[str(curr_node)] = curr_node.value
+        return curr_node
 
-            if not curr_move.explored and curr_move.depth < depth:
-                curr_move.generate_potential_moves()
-                applied_moves = sort_states_by_heuristic(
-                    curr_move.process_moves())
-                for each_move in applied_moves:
-                    move_queue.append(each_move)
-                    each_move.parent = curr_move
-                    # pause when moves are ~x depth down, then structure minimax tree for selection of moves to execute
-            elif curr_move.depth == depth:
-                depth_moves.append(curr_move)
-        depth_moves = sort_states_by_heuristic(depth_moves)
-        print(' '.join([f'{x.count_pieces()}' for x in depth_moves]))
+    curr_node.state.generate_potential_moves()
+    children_states = sort_states_by_heuristic(curr_node.state.process_moves())
+    children = []
+
+    for each_child_state in children_states:
+        child_node = CheckersGraphNode(
+            curr_node.spec, True, each_child_state)
+        child_node.parent = curr_node
+        children.append(child_node)
+
+    curr_node.add_children(children)
+
+    for each_recur_child in children:
+        recursive_deepening_dfs(each_recur_child, visited_states)
+
+    return curr_node
+
+
+def alphabeta_pruning(curr_node: CheckersGraphNode, alpha=float('-inf'), beta=float('inf')) -> float:
+    if curr_node.spec == GraphNodeType.TERMINAL:
+        return curr_node.value
+
+    if curr_node.spec == GraphNodeType.MAX:
+        curr_value = float('-inf')
+        for each_ab_child in curr_node.children:
+            curr_value = max(curr_value, alphabeta_pruning(
+                each_ab_child, alpha, beta))
+            if curr_value > beta:
+                break
+            alpha = max(alpha, curr_value)
+        return curr_value
+
+    curr_value = float('inf')
+    for each_ab_child in curr_node.children:
+        curr_value = min(curr_value, alphabeta_pruning(
+            each_ab_child, alpha, beta))
+        if curr_value < alpha:
+            break
+        beta = min(curr_value, beta)
+    return curr_value
+
+
+def is_your_turn(player_side: CheckersPlayer, state: CheckersGraphNode) -> bool:
+    return player_side == state.state.turn
 
 
 """
@@ -788,13 +837,54 @@ class CheckersGraphNode(GraphNode):
 """
 
 if __name__ == '__main__':
-    g: CheckersGraphNode = CheckersGraphNode().set_spec(
-        GraphNodeType.MAX)  # type: ignore
+    # We start with a max
+    chosen_side: CheckersPlayer = CheckersPlayer.TOP
+    CHOSEN_SIDE_INPUT = ''
+    sides = set(['t', 'T', 'top', 'Top', 'b', 'B', 'bottom', 'Bottom'])
+    while len(CHOSEN_SIDE_INPUT) == 0 or CHOSEN_SIDE_INPUT not in sides:
+        CHOSEN_SIDE_INPUT = input(
+            f'Chose a side: {', '.join(list(sides))} >>\t')
+
+    match CHOSEN_SIDE_INPUT:
+        case 't' | 'T' | 'top' | 'Top':
+            chosen_side = CheckersPlayer.TOP
+        case _:
+            chosen_side = CheckersPlayer.BOTTOM
+
+    g: CheckersGraphNode = CheckersGraphNode(GraphNodeType.MAX)
     g.state = CheckersState(8, 8)
 
     # Adversarial network, calculates a strategy (policy) which recommends a move for the next state
     init_board(g.state)
-    g.run_iterative_deepening_dfs(10)
+
+    # TODO: Figure out why it is breaking when selecting a move
+    while True:
+        recursive_deepening_dfs(g)
+        if is_your_turn(chosen_side, g):
+            moves = []
+            for ind, each_child in enumerate(g.children):
+                moves.append(
+                    f'{ind + 1}:\t{each_child.state.applied_move_str} [Score: {alphabeta_pruning(each_child)}]')
+            print('\n'.join(moves))
+            SELECTED_MOVE = 0
+            available_moves = list(set(range(1, len(moves) + 1)))
+            while SELECTED_MOVE not in available_moves:
+                SELECTED_MOVE = int(input('Select a move from the list  >>  '))
+            g.state = g.parent.state.process_move(
+                g.children[SELECTED_MOVE].state.applied_move) if g.parent is not None else g.state.process_move(
+                g.children[SELECTED_MOVE].state.applied_move)
+        else:
+            # is CPUs turn, picks max
+            max_amt = float('-inf')
+            max_child: Optional[CheckersGraphNode] = None
+            for ind, each_child in enumerate(g.children):
+                val = alphabeta_pruning(each_child)
+                if val > max_amt:
+                    max_amt = val
+                    max_child = each_child
+            g.state = g.parent.state.process_move(
+                max_child.state.applied_move) if g.parent is not None else g.state.process_move(max_child.state.applied_move)
+
 
 """
 ░█▀▀░█▀█░█▀▄░░░█▄█░█▀█░▀█▀░█▀█
